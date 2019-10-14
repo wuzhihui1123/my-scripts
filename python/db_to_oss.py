@@ -5,6 +5,7 @@ import os
 import shutil
 import smtplib
 import subprocess
+import sys
 import time
 import traceback
 from email.mime.text import MIMEText
@@ -34,13 +35,13 @@ _config_ = {
     },
     "backup": {
         "host_ip": "<hidden>",
-        'database': "<hidden>",
         "compress_pwd": "<hidden>",
         "email_addressee": ["<hidden>"]
     }
 }
 
 CURR_DIR = os.path.dirname(os.path.abspath(__file__))
+_backup_db_ = ""
 
 
 def get_compress_pwd():
@@ -53,10 +54,6 @@ def get_host_ip():
 
 def get_email_addressee():
     return _config_.get("backup", {}).get("email_addressee", [])
-
-
-def get_backup_db():
-    return _config_.get("backup", {}).get("database")
 
 
 def prepare_runtime_env():
@@ -111,7 +108,7 @@ def log_exception(func):
             exc_track_info = traceback.format_exc()
             write_log(exc_track_info)
 
-            subject = u'[X] 数据备份失败({}/{})'.format(get_host_ip(), get_backup_db())
+            subject = u'[X] 数据备份失败({}/{})'.format(get_host_ip(), _backup_db_)
             content = u'''
                 <p><b>错误信息：</b><pre style='padding:10px;background-color:#eee'>{err_info}</pre></p>
             '''.format(err_info=exc_track_info)
@@ -257,23 +254,26 @@ def dump_mysql(sql_file, db_name):
 
 if __name__ == "__main__":
     write_log("=========================== start : backup data ==========================")
+    if len(sys.argv) > 1:
+        _backup_db_ = sys.argv[1]
+
+    write_log("backup db name: {}".format(_backup_db_))
     prepare_runtime_env()
 
-    data_dir = os.path.join(CURR_DIR, 'tmp_data')
+    data_dir = os.path.join(CURR_DIR, 'tmp_data', _backup_db_)
     if not os.path.exists(data_dir):
         os.makedirs(data_dir)
 
-    backup_db = get_backup_db()
     archive_file_list = []
     try:
         bak_time = time.strftime('%Y%m%d%H%M')
         # 导出数据库数据并添加到备份列表中
-        sql_file = os.path.join(data_dir, '{db_name}_{bak_time}.sql'.format(db_name=backup_db, bak_time=time.strftime('%Y%m%d%H%M')))
-        dump_mysql(sql_file, backup_db)
+        sql_file = os.path.join(data_dir, '{db_name}_{bak_time}.sql'.format(db_name=_backup_db_, bak_time=time.strftime('%Y%m%d%H%M')))
+        dump_mysql(sql_file, _backup_db_)
         archive_file_list.append(sql_file)
 
         # 打包压缩和加密备份文件
-        zip_name = "{}-{}.zip".format(backup_db, time.strftime('%Y%m%d%H%M'))
+        zip_name = "{}-{}.zip".format(_backup_db_, time.strftime('%Y%m%d%H%M'))
         zip_file_path = os.path.join(data_dir, zip_name)
         zip_file(zip_file_path, archive_file_list, password=get_compress_pwd())
 
